@@ -1,0 +1,8 @@
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { ArrowUpRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Overview } from './index';
+import { useMedia } from '@/components/tv/media-provider';
+import { MediaThumbnail } from '@/components/tv/media-thumbnail';
+export const Route=createFileRoute('/dashboard')({head:()=>({meta:[{title:'Dashboard | onair TV Corporativa'},{name:'description',content:'Visão geral da programação e dos slides ativos da TV corporativa.'},{property:'og:title',content:'Dashboard | onair'},{property:'og:description',content:'Acompanhe a programação do seu canal.'},{property:'og:type',content:'website'},{name:'twitter:card',content:'summary_large_image'}]}),component:Dashboard});
+function Dashboard(){const {media}=useMedia();const active=media.filter(m=>m.active).sort((a,b)=>a.order-b.order);return <><div className="page-heading"><div><div className="eyebrow">VISÃO GERAL</div><h1>Seu canal em um só lugar</h1><p>Acompanhe os conteúdos da sua TV corporativa.</p></div><Button asChild variant="outline"><Link to="/">Gerenciar conteúdo <ArrowUpRight/></Link></Button></div><Overview/><section className="dashboard-list"><h2>Na programação</h2>{active.length?active.map(m=><div className="program-row" key={m.id}><span className="text-muted-foreground text-xs">{String(m.order).padStart(2,'0')}</span><MediaThumbnail item={m}/><div><strong>{m.title}</strong><small>{m.type==='video'?'Vídeo':m.type==='gif'?'GIF':'Imagem'}</small></div><span>{m.duration} seg</span></div>):<div className="empty-state">Nenhum slide ativo.</div>}</section></>}

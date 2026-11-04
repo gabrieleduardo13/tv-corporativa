@@ -1,0 +1,24 @@
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import team from '@/assets/team.jpg';
+export type Media = { id: string; title: string; type: 'image'|'video'|'gif'; order: number; duration: number; active: boolean; url?: string | undefined; path?: string | undefined; sample?: string | undefined };
+const examples: Media[] = [
+ {id:'sample-1', title:'Boas-vindas à nossa empresa',type:'image',order:1,duration:15,active:true,sample:'welcome'},
+ {id:'sample-2', title:'Nossa equipe em ação',type:'video',order:2,duration:32,active:true,url:team,sample:'team'},
+ {id:'sample-3', title:'Conectados com o futuro',type:'gif',order:3,duration:10,active:true,sample:'future'},
+ {id:'sample-4', title:'Comunicado • Reunião geral',type:'image',order:4,duration:20,active:true,sample:'meeting'},
+ {id:'sample-5', title:'Um novo olhar para o trabalho',type:'video',order:5,duration:45,active:false,url:team,sample:'team'},
+ {id:'sample-6', title:'Pequenas atitudes, grandes mudanças',type:'image',order:6,duration:15,active:true,sample:'green'},
+];
+type Store = {media:Media[]; userId?:string | undefined; loading:boolean; update:(id:string, patch:Partial<Media>)=>Promise<void>; save:(item:Media,file?:File)=>Promise<void>; remove:(item:Media)=>Promise<void>};
+const Context = createContext<Store|null>(null);
+export function MediaProvider({children}:{children:ReactNode}) {
+ const [media,setMedia]=useState<Media[]>(examples); const [userId,setUserId]=useState<string>(); const [loading,setLoading]=useState(false);
+ useEffect(()=>{let live=true; async function load(id?:string){setUserId(id); if(!id){setMedia(examples);return;} setLoading(true); const {data,error}=await supabase.from('tv_slides').select('*').order('display_order'); if(error){toast.error('Não foi possível carregar a programação.');setLoading(false);return;} const rows=await Promise.all((data??[]).map(async r=>{const {data: signed}=await supabase.storage.from('tv-media').createSignedUrl(r.storage_path,3600); return {id:r.id,title:r.title,type:r.media_type as Media['type'],order:r.display_order,duration:r.duration,active:r.active,path:r.storage_path,url:signed?.signedUrl};})); if(live){setMedia(rows);setLoading(false);}} void supabase.auth.getSession().then(({data})=>load(data.session?.user.id));const {data}=supabase.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'||event==='SIGNED_OUT') void load(session?.user.id);}); return()=>{live=false;data.subscription.unsubscribe();};},[]);
+ async function update(id:string,patch:Partial<Media>){if(userId){const fields={...(patch.order!==undefined?{display_order:patch.order}:{}),...(patch.duration!==undefined?{duration:patch.duration}:{}),...(patch.active!==undefined?{active:patch.active}:{})};const {error}=await supabase.from('tv_slides').update(fields).eq('id',id);if(error){toast.error('Não foi possível salvar.');return;}}setMedia(items=>items.map(m=>m.id===id?{...m,...patch}:m));}
+ async function save(item:Media,file?:File){let result={...item};if(userId){let path=item.path; if(file){path=`${userId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9.]/g,'_')}`;const {error}=await supabase.storage.from('tv-media').upload(path,file);if(error)throw new Error('Não foi possível enviar o arquivo.');const {data}=await supabase.storage.from('tv-media').createSignedUrl(path,3600);result.url=data?.signedUrl;}if(!path)throw new Error('Selecione um arquivo.');const row={user_id:userId,title:item.title,media_type:item.type,storage_path:path,display_order:item.order,duration:item.duration,active:item.active};const exists=media.some(m=>m.id===item.id);const response=exists?await supabase.from('tv_slides').update(row).eq('id',item.id).select().single():await supabase.from('tv_slides').insert(row).select().single();if(response.error)throw new Error('Não foi possível salvar o slide.');result={...result,id:response.data.id,path};if(file&&item.path)await supabase.storage.from('tv-media').remove([item.path]);}else if(file){result.url=URL.createObjectURL(file);result.sample=undefined;}setMedia(items=>items.some(m=>m.id===item.id)?items.map(m=>m.id===item.id?result:m):[...items,result]);toast.success('Slide salvo com sucesso.');}
+ async function remove(item:Media){if(userId){const {error}=await supabase.from('tv_slides').delete().eq('id',item.id);if(error)throw new Error('Não foi possível excluir.');if(item.path)await supabase.storage.from('tv-media').remove([item.path]);}setMedia(items=>items.filter(m=>m.id!==item.id));toast.success('Slide excluído.');}
+ return <Context.Provider value={{media,userId,loading,update,save,remove}}>{children}</Context.Provider>;
+}
+export function useMedia(){const store=useContext(Context);if(!store)throw new Error('MediaProvider required');return store;}
